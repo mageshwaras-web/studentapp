@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Live Bus Tracker - High Quality</title>
+  <style>
+    body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', sans-serif; }
+    #map { height: 100vh; width: 100%; }
+
+    /* Modern Glassmorphism Overlay */
+    .overlay {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 10;
+      background: rgba(255, 255, 255, 0.96);
+      padding: 20px;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      width: 280px;
+      border: 1px solid rgba(255,255,255,0.3);
+    }
+
+    h3 { margin: 0 0 15px 0; font-size: 18px; color: #1a73e8; letter-spacing: 0.5px; }
+    
+    select {
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      border: 2px solid #1a73e8;
+      font-size: 15px;
+      margin-bottom: 15px;
+      cursor: pointer;
+      background: white;
+    }
+
+    #info {
+      font-size: 14px;
+      color: #333;
+      line-height: 1.6;
+      border-top: 1px solid #eee;
+      padding-top: 15px;
+    }
+
+    /* Professional Blue Labels for Stops */
+    .stop-label {
+      color: #0000FF !important; 
+      font-weight: 900 !important;
+      font-size: 16px !important;
+      text-shadow: 2px 2px 0px #fff, -2px -2px 0px #fff, 2px -2px 0px #fff, -2px 2px 0px #fff;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+<div class="overlay">
+  <h3>Live Tracking</h3>
+  <select id="bus" onchange="loadBus()">
+    <option value="Bus1">Bus Route 1</option>
+    <option value="Bus2">Bus Route 2</option>
+    <option value="Bus3">Bus Route 3</option>
+  </select>
+  <div id="info">Waiting for GPS signal...</div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<script>
+// --- CONFIGURATION ---
+const firebaseConfig = {
+  apiKey: "AIzaSyAhhfTPO4tDvrDrdy9D4Af8c-fHwXiTsGM",
+  authDomain: "bustracker-caecf.firebaseapp.com",
+  databaseURL: "https://bustracker-caecf-default-rtdb.firebaseio.com",
+  projectId: "bustracker-caecf",
+  storageBucket: "bustracker-caecf.firebasestorage.app",
+  messagingSenderId: "559342508116",
+  appId: "1:559342508116:web:d85a945f580c51ea8e75c1"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+let map, busMarker, studentMarker;
+let busListener, routeLine;
+let stopMarkers = [];
+let stopsData = [];
+let studentLat = null, studentLng = null;
+let hasCenteredOnStudent = false;
+
+// High Quality Blue Bus Icon (Base64) - This will never fail to load
+const blueBusIcon = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0OCA0OCIgd2lkdGg9IjQ4IiBoZWlnaHQ9IjQ4Ij48Y2lyY2xlIGN4PSIyNCIgY3k9IjI0IiByPSIyMiIgZmlsbD0iIzFhNzNlOCIvPjxwYXRoIGQ9Ik0zNCAxOGMwLTEuMS0uOS0yLTItMnYtM2MwLTEuMS0uOS0yLTItMkgxOGMtMS4xIDAtMiAuOS0yIDJ2M2MtMS4xIDAtMiAuOS0yIDJ2MTBjMCAxLjEuOSAyIDIgMnY0YzAgLjU1LjQ1IDEgMSAxaDJjLjU1IDAgMS0uNDUgMS0xdi0yaDEydjJjMCAuNTUuNDUgMSAxIDFoMmMuNTUgMCAxLS40NSAxLTF2LTRjMS4xIDAgMi0uOSAyLTJWMTh6bS0xNyA4Yy0uODMgMC0xLjUtLjY3LTEuNS0xLjVTMzEuNjcgMjQgMzQuNSAyNCAzNiAyNC42NyAzNiAyNS41czIuMzMgMS41IDEuNSAxLjV6bS0xMiAwYy0uODMgMC0xLjUtLjY3LTEuNS0xLjVTMTEuNjcgMjQgMTQuNSAyNCAxNiAyNC42NyAxNiAyNS41czIuMzMgMS41IDEuNSAxLjV6TTMyIDE2SDE2di0zaDE2djN6IiBmaWxsPSJ3aGl0ZSIvPjwvc3ZnPg==";
+
+function initMap() {
+  map = new google.maps.Map(document.getElementById("map"), {
+    zoom: 16,
+    center: { lat: 12.9716, lng: 77.5946 },
+    disableDefaultUI: false,
+    styles: [
+      { "featureType": "poi", "stylers": [{ "visibility": "off" }] }
+    ]
+  });
+
+  busMarker = new google.maps.Marker({
+    map: map,
+    icon: {
+      url: blueBusIcon,
+      scaledSize: new google.maps.Size(45, 45),
+      anchor: new google.maps.Point(22, 22)
+    },
+    zIndex: 1000
+  });
+
+  studentMarker = new google.maps.Marker({
+    map: map,
+    icon: {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: 10,
+      fillColor: "#1a73e8",
+      fillOpacity: 1,
+      strokeWeight: 3,
+      strokeColor: "white"
+    },
+    title: "Your Location"
+  });
+
+  getStudentLocation();
+  loadBus();
+}
+
+function getStudentLocation() {
+  if (navigator.geolocation) {
+    navigator.geolocation.watchPosition(pos => {
+      studentLat = pos.coords.latitude;
+      studentLng = pos.coords.longitude;
+      const studentPos = { lat: studentLat, lng: studentLng };
+      
+      studentMarker.setPosition(studentPos);
+
+      if (!hasCenteredOnStudent) {
+        map.panTo(studentPos); // Jump to you immediately
+        hasCenteredOnStudent = true;
+      }
+      if (stopsData.length > 0) findNearestStop();
+    }, null, { enableHighAccuracy: true });
+  }
+}
+
+function loadBus() {
+  const bus = document.getElementById("bus").value;
+  if (busListener) busListener.off();
+  stopMarkers.forEach(m => m.setMap(null));
+  if (routeLine) routeLine.setMap(null);
+  stopMarkers = [];
+  stopsData = [];
+
+  loadStops(bus);
+
+  busListener = db.ref("busdata/" + bus);
+  busListener.on("value", snap => {
+    if (snap.exists()) {
+      const d = snap.val();
+      busMarker.setPosition({ lat: Number(d.lat), lng: Number(d.lng) });
+      
+      document.getElementById("info").innerHTML = `
+        <b style="color:#1a73e8">Bus Status:</b> Online<br>
+        <small>Last Update: ${d.updated || 'Just now'}</small>
+      `;
+      if (studentLat) findNearestStop();
+    }
+  });
+}
+
+function loadStops(bus) {
+  db.ref("routes/" + bus + "/stops").once("value", snap => {
+    if (!snap.exists()) return;
+    stopsData = Object.values(snap.val());
+
+    stopsData.forEach(stop => {
+      let marker = new google.maps.Marker({
+        position: { lat: stop.lat, lng: stop.lng },
+        map: map,
+        label: {
+          text: stop.name,
+          className: 'stop-label'
+        },
+        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 } 
+      });
+      stopMarkers.push(marker);
+    });
+
+    // --- GREEN POLYLINES ---
+    routeLine = new google.maps.Polyline({
+      path: stopsData.map(s => ({ lat: s.lat, lng: s.lng })),
+      strokeColor: "#2ecc71",
+      strokeOpacity: 1.0,
+      strokeWeight: 6,
+      map: map
+    });
+
+    if (studentLat) findNearestStop();
+  });
+}
+
+function findNearestStop() {
+  let nearest = null;
+  let minDist = 9999;
+  stopsData.forEach(stop => {
+    let dist = getDistance(studentLat, studentLng, stop.lat, stop.lng);
+    if (dist < minDist) {
+      minDist = dist;
+      nearest = stop;
+    }
+  });
+
+  if (nearest) {
+    const info = document.getElementById("info");
+    const existing = info.innerHTML.split("<hr>")[0];
+    info.innerHTML = existing + `
+      <hr style="border:0; border-top:1px solid #eee; margin:10px 0;">
+      <b style="color:#27ae60">Nearest Stop:</b> ${nearest.name}<br>
+      <b>Distance:</b> ${minDist.toFixed(2)} km
+    `;
+  }
+}
+
+function getDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLng/2) * Math.sin(dLng/2);
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+}
+</script>
+
+<script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBOOKpyfFqyW1B37sEF0h19J6QteTDZfZM&callback=initMap"></script>
+
+</body>
+</html>
