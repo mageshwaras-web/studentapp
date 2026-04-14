@@ -280,12 +280,12 @@ const MAPS_API_KEY = "AIzaSyBOOKpyfFqyW1B37sEF0h19J6QteTDZfZM";
 // ── Auth Guard ────────────────────────────────────────────────────────────
 auth.onAuthStateChanged(user => {
   document.getElementById("auth-loading").style.display = "none";
-  if (!user) { window.location.href = "student_login.html"; return; }
+  if (!user) { window.location.href = "index.html"; return; }
   document.getElementById("app").style.display = "block";
 });
 
 function signOut() {
-  auth.signOut().then(() => { window.location.href = "student_login.html"; });
+  auth.signOut().then(() => { window.location.href = "index.html"; });
 }
 
 // ── State ─────────────────────────────────────────────────────────────────
