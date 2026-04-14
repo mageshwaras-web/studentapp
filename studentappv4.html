@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Bus Tracker – Student</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body, html { height: 100%; font-family: 'Segoe UI', Roboto, sans-serif; }
+    #map { height: 100vh; width: 100%; }
+
+    .panel {
+      position: absolute;
+      top: 16px; left: 16px;
+      z-index: 10;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+      width: 300px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      background: #1a73e8;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: white;
+    }
+    .panel-header-left { display: flex; align-items: center; gap: 8px; }
+    .panel-header .icon { font-size: 18px; }
+    .panel-title { font-size: 14px; font-weight: 600; }
+
+    .signout-btn {
+      background: rgba(255,255,255,0.2);
+      border: none; color: white;
+      font-size: 11px; font-weight: 600;
+      padding: 4px 10px; border-radius: 20px;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .signout-btn:hover { background: rgba(255,255,255,0.35); }
+
+    .panel-body { padding: 14px 16px; }
+
+    select {
+      width: 100%;
+      padding: 10px 36px 10px 12px;
+      border-radius: 8px;
+      border: 1.5px solid #dfe1e5;
+      font-size: 14px; margin-bottom: 12px;
+      cursor: pointer; background: white;
+      appearance: none;
+      background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235f6368' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      color: #202124; outline: none;
+    }
+    select:focus { border-color: #1a73e8; }
+
+    /* Bus status card */
+    .bus-status-card {
+      border-radius: 10px; padding: 11px 13px;
+      margin-bottom: 10px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .bus-status-card.online  { background: #e6f4ea; }
+    .bus-status-card.offline { background: #fce8e6; }
+    .bus-status-card.waiting { background: #f8f9fa; }
+
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .status-dot.live    { background: #34a853; animation: blink 1.4s infinite; }
+    .status-dot.offline { background: #ea4335; }
+    .status-dot.waiting { background: #bdc1c6; }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.4; transform: scale(1.5); }
+    }
+
+    .status-label { font-size: 13px; font-weight: 600; }
+    .status-label.online  { color: #137333; }
+    .status-label.offline { color: #c5221f; }
+    .status-label.waiting { color: #5f6368; }
+    .status-sub { font-size: 11px; color: #5f6368; margin-top: 1px; }
+
+    /* ── ETA Card ── */
+    .eta-card {
+      border-radius: 12px;
+      background: linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%);
+      padding: 14px 16px;
+      margin-bottom: 10px;
+      color: white;
+      display: none;
+    }
+
+    .eta-card.traffic-heavy  { background: linear-gradient(135deg, #e53935 0%, #b71c1c 100%); }
+    .eta-card.traffic-medium { background: linear-gradient(135deg, #f57c00 0%, #e65100 100%); }
+    .eta-card.traffic-light  { background: linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%); }
+
+    .eta-top {
+      display: flex; align-items: flex-start; justify-content: space-between;
+    }
+
+    .eta-label { font-size: 11px; font-weight: 600; opacity: 0.85; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+    .eta-time  { font-size: 32px; font-weight: 700; line-height: 1; }
+    .eta-unit  { font-size: 13px; opacity: 0.85; margin-top: 4px; }
+
+    .eta-traffic-badge {
+      display: flex; align-items: center; gap: 5px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 20px;
+      padding: 4px 10px;
+      font-size: 11px; font-weight: 600;
+    }
+
+    .traffic-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+    }
+    .traffic-dot.green  { background: #69f0ae; }
+    .traffic-dot.yellow { background: #ffeb3b; }
+    .traffic-dot.red    { background: #ff5252; }
+
+    .eta-bottom {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255,255,255,0.2);
+      display: flex; justify-content: space-between;
+      font-size: 12px; opacity: 0.9;
+    }
+
+    .eta-bottom span { display: flex; flex-direction: column; gap: 1px; }
+    .eta-bottom .sub-label { font-size: 10px; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.3px; }
+    .eta-bottom .sub-val   { font-weight: 600; }
+
+    .eta-updating {
+      font-size: 10px; opacity: 0.7;
+      margin-top: 6px; text-align: right;
+    }
+
+    /* Info rows */
+    .info-section { border-top: 1px solid #f0f0f0; padding-top: 10px; margin-top: 2px; }
+    .info-row {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      font-size: 13px; margin-bottom: 7px;
+    }
+    .info-row .label { color: #5f6368; }
+    .info-row .value { font-weight: 600; color: #202124; text-align: right; max-width: 155px; }
+    .info-row .value.green { color: #137333; }
+    .info-row .value.blue  { color: #1a73e8; }
+
+    /* Center button */
+    .center-btn {
+      position: absolute; bottom: 24px; right: 16px; z-index: 10;
+      background: white; border: none; border-radius: 50%;
+      width: 44px; height: 44px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      cursor: pointer; font-size: 18px;
+      display: flex; align-items: center; justify-content: center;
+      transition: transform 0.15s;
+    }
+    .center-btn:active { transform: scale(0.94); }
+
+    .stop-label {
+      color: #1a56c4 !important; font-weight: 700 !important;
+      font-size: 13px !important;
+      text-shadow: 1px 1px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff;
+      white-space: nowrap;
+    }
+
+    #auth-loading {
+      position: fixed; inset: 0; background: white;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px; color: #5f6368; z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+
+<div id="auth-loading">Checking authentication…</div>
+
+<div id="app" style="display:none;">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-header-left">
+        <span class="icon">🚌</span>
+        <span class="panel-title">Live Bus Tracker</span>
+      </div>
+      <button class="signout-btn" onclick="signOut()">Sign out</button>
+    </div>
+
+    <div class="panel-body">
+      <select id="bus" onchange="loadBus()">
+        <option value="Bus1">Bus 01 – Karapakkam</option>
+        <option value="Bus2">Bus 02 – Airport Express</option>
+        <option value="Bus3">Bus 03 – University</option>
+      </select>
+
+      <!-- Bus online/offline status -->
+      <div id="bus-status-card" class="bus-status-card waiting">
+        <div id="status-dot" class="status-dot waiting"></div>
+        <div>
+          <div id="status-label" class="status-label waiting">Waiting for signal…</div>
+          <div id="status-sub" class="status-sub"></div>
+        </div>
+      </div>
+
+      <!-- ── ETA Card (shown only when bus is online) ── -->
+      <div class="eta-card" id="eta-card">
+        <div class="eta-top">
+          <div>
+            <div class="eta-label">Bus arrives at your stop in</div>
+            <div class="eta-time" id="eta-minutes">—</div>
+            <div class="eta-unit">minutes</div>
+          </div>
+          <div class="eta-traffic-badge" id="traffic-badge">
+            <div class="traffic-dot green" id="traffic-dot"></div>
+            <span id="traffic-label">Checking…</span>
+          </div>
+        </div>
+        <div class="eta-bottom">
+          <span>
+            <span class="sub-label">Bus distance</span>
+            <span class="sub-val" id="eta-bus-dist">—</span>
+          </span>
+          <span>
+            <span class="sub-label">Arrival time</span>
+            <span class="sub-val" id="eta-arrival-clock">—</span>
+          </span>
+          <span>
+            <span class="sub-label">Via stops</span>
+            <span class="sub-val" id="eta-stops-count">—</span>
+          </span>
+        </div>
+        <div class="eta-updating" id="eta-updated-at"></div>
+      </div>
+
+      <!-- Info rows -->
+      <div class="info-section" id="info-section" style="display:none;">
+        <div class="info-row">
+          <span class="label">Your nearest stop</span>
+          <span class="value green" id="nearest-stop">—</span>
+        </div>
+        <div class="info-row">
+          <span class="label">Walk to stop</span>
+          <span class="value" id="your-dist">—</span>
+        </div>
+        <div class="info-row">
+          <span class="label">Last GPS update</span>
+          <span class="value" id="last-update">—</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <button class="center-btn" onclick="centerOnMe()" title="Center on my location">📍</button>
+  <div id="map"></div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyAhhfTPO4tDvrDrdy9D4Af8c-fHwXiTsGM",
+  authDomain: "bustracker-caecf.firebaseapp.com",
+  databaseURL: "https://bustracker-caecf-default-rtdb.firebaseio.com",
+  projectId: "bustracker-caecf",
+  storageBucket: "bustracker-caecf.firebasestorage.app",
+  messagingSenderId: "559342508116",
+  appId: "1:559342508116:web:d85a945f580c51ea8e75c1"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db   = firebase.database();
+
+const MAPS_API_KEY = "AIzaSyBOOKpyfFqyW1B37sEF0h19J6QteTDZfZM";
+
+// ── Auth Guard ────────────────────────────────────────────────────────────
+auth.onAuthStateChanged(user => {
+  document.getElementById("auth-loading").style.display = "none";
+  if (!user) { window.location.href = "student_login.html"; return; }
+  document.getElementById("app").style.display = "block";
+});
+
+function signOut() {
+  auth.signOut().then(() => { window.location.href = "student_login.html"; });
+}
+
+// ── State ─────────────────────────────────────────────────────────────────
+let map, busMarker, studentMarker, routeLine, distanceService;
+let busListener;
+let stopMarkers = [], stopsData = [];
+let studentLat = null, studentLng = null;
+let busLat = null, busLng = null;
+let hasCentered = false;
+let etaTimer = null;       // repeating ETA refresh timer
+let nearestStop = null;    // nearest stop to student
+
+const grayBusIcon = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0OCA0OCIgd2lkdGg9IjQ4IiBoZWlnaHQ9IjQ4Ij48Y2lyY2xlIGN4PSIyNCIgY3k9IjI0IiByPSIyMiIgZmlsbD0iIzlhYTBhNiIvPjxwYXRoIGQ9Ik0zNCAxOGMwLTEuMS0uOS0yLTItMnYtM2MwLTEuMS0uOS0yLTItMkgxOGMtMS4xIDAtMiAuOS0yIDJ2M2MtMS4xIDAtMiAuOS0yIDJ2MTBjMCAxLjEuOSAyIDIgMnY0YzAgLjU1LjQ1IDEgMSAxaDJjLjU1IDAgMS0uNDUgMS0xdi0yaDEydjJjMCAuNTUuNDUgMSAxIDFoMmMuNTUgMCAxLS40NSAxLTF2LTRjMS4xIDAgMi0uOSAyLTJWMTh6IiBmaWxsPSJ3aGl0ZSIvPjwvc3ZnPg==";
+const blueBusIcon = "sbubuslogo.png";   // if in same folder
+
+
+// ── Map Init ──────────────────────────────────────────────────────────────
+function initMap() {
+  map = new google.maps.Map(document.getElementById("map"), {
+    zoom: 15,
+    center: { lat: 12.9716, lng: 77.5946 },
+    styles: [{ featureType: "poi", stylers: [{ visibility: "off" }] }]
+  });
+
+  // Distance Matrix service for real traffic-based ETA
+  distanceService = new google.maps.DistanceMatrixService();
+
+  busMarker = new google.maps.Marker({
+    map,
+    icon: { url: grayBusIcon, scaledSize: new google.maps.Size(44, 44), anchor: new google.maps.Point(22, 22) },
+    zIndex: 1000, visible: false
+  });
+
+  studentMarker = new google.maps.Marker({
+    map,
+    icon: {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: 9, fillColor: "#1a73e8", fillOpacity: 1,
+      strokeWeight: 3, strokeColor: "white"
+    },
+    title: "Your Location", zIndex: 999
+  });
+
+  getStudentLocation();
+  loadBus();
+}
+
+// ── Student GPS ───────────────────────────────────────────────────────────
+function getStudentLocation() {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.watchPosition(pos => {
+    studentLat = pos.coords.latitude;
+    studentLng = pos.coords.longitude;
+    studentMarker.setPosition({ lat: studentLat, lng: studentLng });
+    if (!hasCentered) { map.panTo({ lat: studentLat, lng: studentLng }); hasCentered = true; }
+    refreshNearestStop();
+  }, null, { enableHighAccuracy: true });
+}
+
+function centerOnMe() {
+  if (studentLat) map.panTo({ lat: studentLat, lng: studentLng });
+}
+
+// ── Bus Route ─────────────────────────────────────────────────────────────
+function loadBus() {
+  if (busListener) busListener.off();
+  stopMarkers.forEach(m => m.setMap(null));
+  if (routeLine) routeLine.setMap(null);
+  stopMarkers = []; stopsData = [];
+  busMarker.setVisible(false);
+  busLat = null; busLng = null;
+  nearestStop = null;
+  clearEtaTimer();
+
+  setBusStatus("waiting");
+  document.getElementById("eta-card").style.display = "none";
+  document.getElementById("info-section").style.display = "none";
+
+  const bus = document.getElementById("bus").value;
+  loadStops(bus);
+
+  busListener = db.ref("busdata/" + bus);
+  busListener.on("value", snap => {
+    if (!snap.exists()) { setBusStatus("waiting"); busMarker.setVisible(false); hideEta(); return; }
+    const d = snap.val();
+
+    if (d.status === "offline") {
+      busLat = null; busLng = null;
+      busMarker.setIcon({ url: grayBusIcon, scaledSize: new google.maps.Size(44,44), anchor: new google.maps.Point(22,22) });
+      busMarker.setVisible(false);
+      setBusStatus("offline", d.updated);
+      hideEta();
+      return;
+    }
+
+    // Bus is online — update position
+    busLat = Number(d.lat);
+    busLng = Number(d.lng);
+    busMarker.setPosition({ lat: busLat, lng: busLng });
+    busMarker.setIcon({ url: blueBusIcon, scaledSize: new google.maps.Size(44,44), anchor: new google.maps.Point(22,22) });
+    busMarker.setVisible(true);
+    setBusStatus("online", d.updated, d.driver);
+    document.getElementById("info-section").style.display = "block";
+    document.getElementById("last-update").textContent = d.updated || "Just now";
+
+    refreshNearestStop();
+
+    // Fetch ETA immediately, then every 60s
+    fetchETA();
+    clearEtaTimer();
+    etaTimer = setInterval(fetchETA, 60000);
+  });
+}
+
+function loadStops(bus) {
+  db.ref("routes/" + bus + "/stops").once("value", snap => {
+    if (!snap.exists()) return;
+    stopsData = Object.values(snap.val());
+
+    stopsData.forEach(stop => {
+      stopMarkers.push(new google.maps.Marker({
+        position: { lat: stop.lat, lng: stop.lng }, map,
+        label: { text: stop.name, className: "stop-label" },
+        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 5, fillColor: "#1a73e8", fillOpacity: 1, strokeColor: "white", strokeWeight: 2 }
+      }));
+    });
+
+    routeLine = new google.maps.Polyline({
+      path: stopsData.map(s => ({ lat: s.lat, lng: s.lng })),
+      strokeColor: "#1a73e8", strokeOpacity: 0.6, strokeWeight: 5, map
+    });
+
+    refreshNearestStop();
+  });
+}
+
+// ── Nearest Stop ──────────────────────────────────────────────────────────
+function refreshNearestStop() {
+  if (!stopsData.length || studentLat === null) return;
+
+  let minDist = 9999;
+  stopsData.forEach(stop => {
+    const d = haversine(studentLat, studentLng, stop.lat, stop.lng);
+    if (d < minDist) { minDist = d; nearestStop = stop; }
+  });
+
+  document.getElementById("nearest-stop").textContent = nearestStop.name;
+  document.getElementById("your-dist").textContent = formatDist(minDist) + " walk";
+}
+
+// ── ETA via Distance Matrix (live traffic) ────────────────────────────────
+function fetchETA() {
+  if (!busLat || !nearestStop || !distanceService) return;
+
+  // Figure out how many stops remain between bus and student's nearest stop
+  const busPos    = { lat: busLat, lng: busLng };
+  const targetPos = { lat: nearestStop.lat, lng: nearestStop.lng };
+
+  // Build waypoints: stops between bus and nearest stop (ordered along route)
+  // We find which stop index is closest to the bus, then which is nearest stop
+  let busClosestIdx = 0, minBusDist = 9999;
+  stopsData.forEach((stop, i) => {
+    const d = haversine(busLat, busLng, stop.lat, stop.lng);
+    if (d < minBusDist) { minBusDist = d; busClosestIdx = i; }
+  });
+
+  let targetIdx = stopsData.findIndex(s => s.name === nearestStop.name);
+  if (targetIdx === -1) targetIdx = stopsData.length - 1;
+
+  // Stops in between (not counting endpoints, max 23 waypoints for API)
+  const stopsInBetween = Math.abs(targetIdx - busClosestIdx);
+
+  // Use Distance Matrix: bus current location → student's nearest stop
+  // drivingOptions with departureTime = now for live traffic
+  distanceService.getDistanceMatrix({
+    origins: [busPos],
+    destinations: [targetPos],
+    travelMode: google.maps.TravelMode.DRIVING,
+    drivingOptions: {
+      departureTime: new Date(),               // ← live traffic data
+      trafficModel: google.maps.TrafficModel.BEST_GUESS
+    },
+    unitSystem: google.maps.UnitSystem.METRIC
+  }, (response, status) => {
+    if (status !== "OK") { console.warn("Distance Matrix error:", status); return; }
+
+    const element = response.rows[0].elements[0];
+    if (element.status !== "OK") { console.warn("Element status:", element.status); return; }
+
+    const durationInTraffic = element.duration_in_traffic
+      ? element.duration_in_traffic.value   // seconds, with live traffic
+      : element.duration.value;             // fallback: no traffic data
+
+    const distanceM  = element.distance.value;   // metres
+    const durationS  = durationInTraffic;
+
+    const etaMinutes = Math.ceil(durationS / 60);
+    const etaMs      = Date.now() + durationS * 1000;
+    const arrivalTime = new Date(etaMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+    // Traffic level classification
+    const baselineSecs = element.duration.value;
+    const ratio = durationInTraffic / baselineSecs;
+    let trafficLevel, trafficText, cardClass, dotClass;
+
+    if (ratio < 1.2) {
+      trafficLevel = "light";  trafficText = "Light traffic";  cardClass = "traffic-light";  dotClass = "green";
+    } else if (ratio < 1.6) {
+      trafficLevel = "medium"; trafficText = "Moderate traffic"; cardClass = "traffic-medium"; dotClass = "yellow";
+    } else {
+      trafficLevel = "heavy";  trafficText = "Heavy traffic";  cardClass = "traffic-heavy";  dotClass = "red";
+    }
+
+    // Update ETA card
+    const etaCard = document.getElementById("eta-card");
+    etaCard.style.display = "block";
+    etaCard.className = "eta-card " + cardClass;
+
+    document.getElementById("eta-minutes").textContent   = etaMinutes;
+    document.getElementById("traffic-dot").className     = "traffic-dot " + dotClass;
+    document.getElementById("traffic-label").textContent = trafficText;
+    document.getElementById("eta-bus-dist").textContent  = formatDist(distanceM / 1000);
+    document.getElementById("eta-arrival-clock").textContent = arrivalTime;
+    document.getElementById("eta-stops-count").textContent   = stopsInBetween + " stop" + (stopsInBetween !== 1 ? "s" : "");
+    document.getElementById("eta-updated-at").textContent    = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  });
+}
+
+function hideEta() {
+  clearEtaTimer();
+  document.getElementById("eta-card").style.display = "none";
+  document.getElementById("info-section").style.display = "none";
+}
+
+function clearEtaTimer() {
+  if (etaTimer) { clearInterval(etaTimer); etaTimer = null; }
+}
+
+// ── Status Card ───────────────────────────────────────────────────────────
+function setBusStatus(mode, updated, driver) {
+  const card  = document.getElementById("bus-status-card");
+  const dot   = document.getElementById("status-dot");
+  const label = document.getElementById("status-label");
+  const sub   = document.getElementById("status-sub");
+
+  card.className  = "bus-status-card " + mode;
+  dot.className   = "status-dot " + (mode === "online" ? "live" : mode);
+  label.className = "status-label " + mode;
+
+  if (mode === "online") {
+    label.textContent = "Bus Online — Live";
+    sub.textContent   = (driver ? driver + " · " : "") + (updated || "");
+  } else if (mode === "offline") {
+    label.textContent = "Bus Offline";
+    sub.textContent   = "Last seen: " + (updated || "—");
+  } else {
+    label.textContent = "Waiting for signal…";
+    sub.textContent   = "Bus hasn't started yet";
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function haversine(lat1, lng1, lat2, lng2) {
+  const R = 6371, r = x => x * Math.PI / 180;
+  const dL = r(lat2-lat1), dG = r(lng2-lng1);
+  const a = Math.sin(dL/2)**2 + Math.cos(r(lat1)) * Math.cos(r(lat2)) * Math.sin(dG/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function formatDist(km) {
+  return km < 1 ? Math.round(km * 1000) + " m" : km.toFixed(2) + " km";
+}
+</script>
+
+<!-- Load Maps with: Distance Matrix + Driving options (traffic) -->
+<script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBOOKpyfFqyW1B37sEF0h19J6QteTDZfZM&libraries=geometry&callback=initMap"></script>
+
+</body>
+</html>
